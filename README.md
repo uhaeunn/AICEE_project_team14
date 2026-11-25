@@ -1,0 +1,59 @@
+# 서울 S-DoT 센서 기반 동네별 도시 열섬 예측
+
+도시데이터 센서(S-DoT) 기온과 센서 주변 토지피복(녹지·불투수면·수공간) 비율로
+센서가 없는 지역의 낮·밤 열섬 강도를 예측한다.
+
+## 폴더 구조
+```
+AICEE_project/
+├─ data_raw/          원본 (수정 금지, GitHub에 안 올림)
+│   ├─ sdot/          열린데이터광장 S-DoT 주간 CSV + 설치 위치정보.xlsx
+│   └─ worldcover/    ESA WorldCover 10m 지도 (.tif)
+├─ data_processed/    labels.csv(A), features.csv(B), train.csv(C) / *_dummy.csv = 가짜 데이터
+├─ shared/            evaluate.py(평가), landcover.py(비율 계산), make_dummy_data.py
+├─ notebooks/         01~03 데이터, 11~14 모델, 20 지도
+├─ models/            학습된 모델 파일 (14 → 20 지도에서 재사용)
+└─ results/           cv_scores.csv(시도 기록 로그), 그래프 png
+```
+
+## 노트북 순서 / 담당
+| 노트북 | 내용 | 담당 |
+|---|---|---|
+| 01_labels_A | 기온 정리 → 열섬 강도 → labels.csv | A |
+| 02_features_B | 센서 주변 300m 토지피복 비율 → features.csv | B |
+| 03_merge_split_C | 합치기 → 자치구 단위 학습/테스트 분할 | C |
+| 11_model1_linear_A | 서울 평균 기준선 + 단순 선형회귀(녹지만) | A |
+| 12_model2_multilinear_B | 다중 선형회귀 | B |
+| 13_model3_RF_C | 랜덤포레스트 | C |
+| 14_model4_XGB_D | XGBoost | D |
+| 20_map_D | 서울 격자 예측 → 열섬 지도 | D |
+
+## 강의 기준 체크리스트 (6주차 '팀 프로젝트 신뢰성 프로토콜' 8단계)
+| 단계 | 우리 프로젝트에서 | 어디서 |
+|---|---|---|
+| 1. 배포 상황 정의 | 센서 없는 '새 동네(구)'의 열섬 예측 | 제안서 |
+| 2. 그에 맞게 분할 | 자치구 단위 분할, 테스트 5개 구 잠금 | 03 |
+| 3. 베이스라인 먼저 | 서울 평균 → 단순 선형회귀 | 11 |
+| 4. CV로 선택 | 구 단위 교차검증, 전처리는 Pipeline 안, XGB 튜닝은 Nested CV | evaluate.py, 14 |
+| 5. 누수 점검 | 입력은 예측 시점에 아는 값만, 중요도 상위에 ID·좌표 없는지 | 02, 13, 14 |
+| 6. 테스트는 한 번 | RMSE + 95% 신뢰구간, 모델 차이는 paired bootstrap | 03 |
+| 7. 오류 분석 | 실패 사례 4개, 잔차 vs 변수, 구별 성능 | 11~14 |
+| 8. 불확실성·한계 | 학습 범위(외삽 불가) 표시, 중요도 ≠ 원인 | 13, 20 |
+
+그 밖에: 2주차(EDA 먼저, 결측 원인, 이상치 vs 극한 사건), 3주차(잔차 그림, VIF 다중공선성, 표준화 계수), 5주차(같은 폴드로 공정 비교, 평균 ± 표준편차 보고, 순열 중요도).
+
+## 팀 규칙
+1. 노트북 하나는 한 사람만 편집 (남의 것은 '사본 만들기')
+2. 파일 수정 시 덮어쓰지 말고 `_v2` 붙이고 단톡 공지
+3. `random_state = 42` 고정
+4. 모든 모델은 `shared/evaluate.py`의 `cv_by_district`로만 평가
+5. 테스트 데이터는 C만 보관, 마지막에 한 번만 채점
+6. 그래프 파일명: `이니셜_fig번호_설명.png`
+
+## 데이터 출처 (재현 방법)
+- S-DoT 환경정보: 서울 열린데이터광장 「스마트서울 도시데이터 센서(S-DoT) 환경정보」 (기간: TODO)
+- 토지피복: ESA WorldCover 10m (2021, v200) 서울 포함 타일
+- 위 파일을 `data_raw/`에 넣고 노트북 01 → 02 → 03 → 11~14 → 20 순서로 실행
+
+## 실행 환경
+Google Colab (pandas, scikit-learn, xgboost 기본 설치 / rasterio는 노트북에서 pip 설치)
