@@ -13,6 +13,7 @@
     from evaluate import cv_by_district, save_cv_result
     overall, per_gu, oof = cv_by_district(model, X, y, groups=df["gu"])
     save_cv_result("model3_RF", "uhi_night", overall, BASE, note="n_estimators=300")
+    # → USE_DUMMY = True면 cv_scores_dummy.csv, False면 cv_scores.csv에 자동으로 나뉘어 기록됨
 """
 import os
 from datetime import datetime
@@ -99,23 +100,44 @@ def nested_cv_by_district(search, X, y, groups):
     return overall, per_gu, oof, chosen
 
 
-def save_cv_result(model_name, target, overall, base_dir, note=""):
+def _is_dummy(dummy=None):
+    """dummy를 직접 안 주면 노트북 맨 위의 USE_DUMMY 값을 읽어서 판단 (팀원 노트북은 안 고쳐도 됨)"""
+    if dummy is not None:
+        return bool(dummy)
+    import __main__
+    return bool(getattr(__main__, "USE_DUMMY", False))
+
+
+def save_cv_result(model_name, target, overall, base_dir, note="", dummy=None):
     """
-    교차검증 결과를 results/cv_scores.csv에 '추가'만 함 (덮어쓰지 않음 = 시도 기록 로그)
+    교차검증 결과를 기록 파일에 '추가'만 함 (덮어쓰지 않음 = 시도 기록 로그)
+    - 진짜 데이터: results/cv_scores.csv       (data 열 = "real")
+    - 더미 데이터: results/cv_scores_dummy.csv (data 열 = "dummy") → 진짜 기록과 안 섞임
+      노트북의 USE_DUMMY 값을 자동으로 읽음. 필요하면 dummy=True/False로 직접 지정
     note에 바꾼 설정을 적기. 비교표는 latest_scores()로 모델별 마지막 줄만 뽑아 씀
     """
-    path = os.path.join(base_dir, "results", "cv_scores.csv")
+    is_dummy = _is_dummy(dummy)
+    os.makedirs(os.path.join(base_dir, "results"), exist_ok=True)
+    path = os.path.join(base_dir, "results", "cv_scores_dummy.csv" if is_dummy else "cv_scores.csv")
     row = pd.DataFrame([{"time": datetime.now().strftime("%m-%d %H:%M"), "model": model_name,
-                         "target": target, **{k: round(v, 4) for k, v in overall.items()}, "note": note}])
+                         "target": target, **{k: round(v, 4) for k, v in overall.items()}, "note": note,
+                         "data": "dummy" if is_dummy else "real"}])
     if os.path.exists(path):
         row = pd.concat([pd.read_csv(path), row], ignore_index=True)
     row.to_csv(path, index=False)
+    print(f"[{'더미' if is_dummy else '진짜'} 데이터 점수 기록] {path}")
     return path
 
 
 def latest_scores(base_dir):
-    """모델·타깃별 마지막 기록만 → 발표용 비교표 (몇 번 시도했는지 n_tries도 같이 보고)"""
+    """
+    모델·타깃별 마지막 기록만 → 발표용 비교표 (몇 번 시도했는지 n_tries도 같이 보고)
+    진짜 데이터 기록(data == "real")만 씀. data 열이 없는 옛 줄 = 이 수정 전에 더미로 돌린 기록이라 제외
+    """
     log = pd.read_csv(os.path.join(base_dir, "results", "cv_scores.csv"))
+    log = log[log["data"].eq("real")] if "data" in log.columns else log.iloc[0:0]
+    if log.empty:
+        raise ValueError("진짜 데이터로 돌린 기록이 아직 없음 (USE_DUMMY = False로 모델을 돌렸는지 확인)")
     n = log.groupby(["model", "target"]).size().rename("n_tries")
     return log.groupby(["model", "target"]).tail(1).set_index(["model", "target"]).join(n).reset_index()
 
